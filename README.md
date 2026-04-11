@@ -18,8 +18,6 @@ conda activate coconut
 pip install -r requirements.txt
 ```
 
-The code relies on [wandb](https://wandb.ai/site/) for logging. Please log in your wandb account following this [document](https://docs.wandb.ai/ref/cli/wandb-login/) before running any experiments.
-
 ## Data
 
 The data for training and evaluation should be presented as a json file like below:
@@ -49,7 +47,7 @@ The configuration of a run should be specified in a yaml file (an example can be
 
 - **General settings**
 
-  - **project**: Project name for wandb
+  - **project**: Project name for logging
   - **save_path**: Your path to store the checkpoints
   - **only_eval**: If true, only load a model and test on the data from `val_path` (must used along with `load_model_path`). Otherwise, train the model on `train_path` and test on `val_path` after every epoch.
 
@@ -76,7 +74,7 @@ The configuration of a run should be specified in a yaml file (an example can be
   - **val_path**: Path to the validation or test set (depending on `only_eval`)
   - **reset_optimizer**: Whether to reset the optimizer when swtiching training stages.
   - **batch_size_training**: Batch size to train the model per GPU.
-  - **debug**: If true, there is no wandb and model saving. A subset of data will be used.
+  - **debug**: If true, there is no model saving. A subset of data will be used.
   - **gradient_accumulation_steps**: Gradient accumulation steps
   - **num_epochs**: Maximum training epoches.
   - **lr**: Learning rate
