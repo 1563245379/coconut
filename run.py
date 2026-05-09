@@ -54,6 +54,10 @@ def main():
         print("Config:", config_dict)
 
     configs = Config(config_dict)
+    if not hasattr(configs, 'internalize_cot'):
+        configs.internalize_cot = False
+    if not hasattr(configs, 'debug_latent_k'):
+        configs.debug_latent_k = 0
     set_seed(configs.seed)
     save_dir = os.path.join(configs.save_path, configs.name)
 
@@ -139,7 +143,7 @@ def main():
             loaded = True
             print(model.load_state_dict(saved_weights, strict=False))
 
-    if not (configs.cot or configs.no_thoughts or configs.no_cot):
+    if not (configs.cot or configs.no_thoughts or configs.no_cot or configs.internalize_cot):
         # if we need new tokens, initialize their embeddings and lm heads
         model.resize_token_embeddings(len(tokenizer))
         embeddings = model.get_input_embeddings()
@@ -154,6 +158,10 @@ def main():
             lm_head.weight.data[token_id] = lm_head.weight.data[target_id]
 
     if configs.no_thoughts:
+        configs.c_thought = 0
+        configs.coconut = False
+
+    if configs.internalize_cot:
         configs.c_thought = 0
         configs.coconut = False
 
@@ -216,7 +224,6 @@ def main():
 
     if configs.reset_optimizer:
         optimizer = None
-
     else:
         optimizer = optim.AdamW(
             parallel_model.parameters(),
@@ -225,14 +232,18 @@ def main():
         )
 
     best_acc = 0
+    prev_stage = -1
 
     collator = MyCollator(tokenizer, latent_id=latent_id, label_pad_token_id=-100)
 
     for epoch in range(configs.resume, configs.num_epochs):
 
         scheduled_stage = (
-            0 if (configs.cot or configs.no_cot) else epoch // configs.epochs_per_stage
+            0 if (configs.cot or configs.no_cot) and not configs.internalize_cot else epoch // configs.epochs_per_stage
         )
+        n_latent = min(getattr(configs, 'max_latent_stage', scheduled_stage), scheduled_stage) * configs.c_thought
+        if rank == 0:
+            print(f"Epoch {epoch+1}: scheduled_stage={scheduled_stage}, latent tokens={n_latent}")
         dataset_gen_val = get_question_latent_dataset(
             scheduled_stage,
             base_dataset_valid,
@@ -240,7 +251,7 @@ def main():
             start_id,
             latent_id,
             end_id,
-            no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts,
+            no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts or configs.internalize_cot,
         )
 
         valid_gen_dataloader = torch.utils.data.DataLoader(
@@ -261,7 +272,7 @@ def main():
                 start_id,
                 latent_id,
                 end_id,
-                no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts,
+                no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts or configs.internalize_cot,
                 shuffle=True,
             )
 
@@ -285,7 +296,7 @@ def main():
                 start_id,
                 latent_id,
                 end_id,
-                no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts,
+                no_special_marker=configs.cot or configs.no_cot or configs.no_thoughts or configs.internalize_cot,
             )
 
             valid_loss_dataloader = torch.utils.data.DataLoader(
@@ -298,14 +309,17 @@ def main():
                 sampler=DistributedSampler(dataset_loss_val, shuffle=False),
             )
 
-            if configs.reset_optimizer:
-                del optimizer
+            if configs.reset_optimizer and scheduled_stage != prev_stage:
+                if optimizer is not None:
+                    del optimizer
 
                 optimizer = optim.AdamW(
                     parallel_model.parameters(),
                     lr=configs.lr,
                     weight_decay=configs.weight_decay,
                 )
+
+            prev_stage = scheduled_stage
 
             parallel_model.module.train()
 
@@ -411,11 +425,22 @@ def main():
                 total += 1
 
                 # synced_gpus=True in FSDP mode, as we need to keep # forward pass the same on each device
-                outputs = parallel_model.module.generate(
-                    **batch,
+                use_latent_debug = configs.coconut and configs.debug_latent_k > 0
+                gen_kwargs = dict(
                     max_new_tokens=max_new_tokens,
                     synced_gpus=not configs.only_eval,
                 )
+                if use_latent_debug:
+                    gen_kwargs["return_latent_hidden"] = True
+                gen_result = parallel_model.module.generate(
+                    **batch,
+                    **gen_kwargs,
+                )
+
+                if use_latent_debug:
+                    outputs, latent_hiddens = gen_result
+                else:
+                    outputs = gen_result
 
                 text_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
                 answer_output = text_output.split("#")[-1].replace(",", "").strip()
@@ -423,13 +448,29 @@ def main():
                     ("\n".join(text_output.split("\n")[1:])).split("#")[0].strip()
                 )
 
-                if idx < 5 and rank == 0:
-                    # print some examples
-                    print(
-                        f"Question {test_idx}: Answer = '{answer}' CoT = '{answer_cot}'"
-                    )
-                    print(f"Full output: '{tokenizer.decode(outputs[0])}'")
-                    print(f"Extracted Output: '{answer_output}'")
+                if (idx < 5 or use_latent_debug) and rank == 0:
+                    correct = answer_output == answer
+                    mark = "✓" if correct else "✗"
+                    print(f"\n{'='*60}")
+                    print(f"[{mark}] Sample {test_idx}  |  Accuracy: {round(float(cor.detach().float() / total.detach().float()), 2)}")
+                    print(f"{'='*60}")
+                    print(f"  Expected Answer : {answer}")
+                    print(f"  Predicted Answer: {answer_output}")
+                    print(f"  Expected CoT    : {answer_cot}")
+                    if use_latent_debug and len(latent_hiddens) > 0:
+                        lm_head = parallel_model.module.base_causallm.lm_head
+                        k = configs.debug_latent_k
+                        latent_tokens = []
+                        for i, h in enumerate(latent_hiddens):
+                            logits = lm_head(h.unsqueeze(0))
+                            top_k_vals, top_k_ids = torch.topk(logits[0], k)
+                            top_k_tokens = [tokenizer.decode([tid]) for tid in top_k_ids.tolist()]
+                            top_k_probs = torch.softmax(logits[0], dim=-1)[top_k_ids].tolist()
+                            latent_str = ", ".join(f"'{t}' ({p:.4f})" for t, p in zip(top_k_tokens, top_k_probs))
+                            latent_tokens.append(f"    [{i}] {latent_str}")
+                        print(f"  Latent Decode ({len(latent_hiddens)} tokens):")
+                        print("\n".join(latent_tokens))
+                    print(f"  Full Output     : {tokenizer.decode(outputs[0], skip_special_tokens=False)}")
 
                 cor += answer_output == answer
                 cor_cot += cot_output == answer_cot

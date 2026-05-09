@@ -1,27 +1,30 @@
 # need 4 gpus
+# Internalize CoT: curriculum learning that progressively removes CoT steps
+# without latent token replacement, forcing the model to internalize reasoning.
 
 project: coconut
 save_path: YOUR_PATH_TO_SAVE_THE_MODEL
-name: prosqa-coconut
+name: prosqa-internalize
 
 only_eval: False
 
-coconut: True
+coconut: False
 cot: False
 no_thoughts: False
 no_cot: False
+internalize_cot: True
 
-c_thought: 1
+c_thought: 0
 epochs_per_stage: 5
 max_latent_stage: 6
-pad_latent_to_max: True
+pad_latent_to_max: False
 
 save_only_improve: False
 uniform_prob: 0.0
 model_id: openai-community/gpt2
-load_model_path: YOUR_PATH_TO_SAVE_THE_MODEL/prosqa-coconut/checkpoint_5
+load_model_path: YOUR_PATH_TO_SAVE_THE_MODEL/prosqa-internalize/checkpoint_20
 seed: 0
-resume: 5
+resume: 10
 bf16: False
 train_path: data/prosqa_train.json
 val_path: data/prosqa_valid.json

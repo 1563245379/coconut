@@ -1,34 +1,37 @@
 # need 4 gpus
+# Internalize CoT: curriculum learning that progressively removes CoT steps
+# without latent token replacement, forcing the model to internalize reasoning.
 
 project: coconut
 save_path: YOUR_PATH_TO_SAVE_THE_MODEL
-name: gsm-coconut
+name: gsm-internalize
 
 only_eval: False
 
-coconut: True
+coconut: False
 cot: False
 no_thoughts: False
 no_cot: False
+internalize_cot: True
 
-c_thought: 2
+c_thought: 0
 epochs_per_stage: 3
 max_latent_stage: 3
-pad_latent_to_max: True
+pad_latent_to_max: False
 
 save_only_improve: False
 uniform_prob: 0.0
 model_id: openai-community/gpt2
-load_model_path: /workspace/coconut/YOUR_PATH_TO_SAVE_THE_MODEL/gsm-cot/checkpoint_best
+load_model_path: YOUR_PATH_TO_SAVE_THE_MODEL/gsm-cot/checkpoint_best
 seed: 0
-resume: 3
+resume: 0
 bf16: False
 train_path: data/gsm_train.json
 val_path: data/gsm_valid.json
 reset_optimizer: True
 batch_size_training: 32
 debug: False
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 1
 num_epochs: 25
 lr: !!float "1e-4"
 weight_decay: 0.01
