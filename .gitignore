@@ -9,6 +9,3 @@ __pycache__/
 # Jupyter checkpoints
 .ipynb_checkpoints/
 */.ipynb_checkpoints/
-
-# Claude Code
-.claude/
