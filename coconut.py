@@ -20,6 +20,8 @@ class Coconut(nn.Module):
         start_latent_id,
         end_latent_id,
         eos_token_id,
+        latent_randomize_mode="none",
+        latent_randomize_mask=None,
     ):
 
         super(Coconut, self).__init__()
@@ -29,6 +31,8 @@ class Coconut(nn.Module):
         self.eos_token_id = eos_token_id
         self.start_latent_id = start_latent_id
         self.end_latent_id = end_latent_id
+        self.latent_randomize_mode = latent_randomize_mode
+        self.latent_randomize_mask = latent_randomize_mask or []
 
         # tested with GPT2 and Llama3
         if isinstance(self.base_causallm, GPT2LMHeadModel):
@@ -148,6 +152,14 @@ class Coconut(nn.Module):
 
                 # replace it with the preceding last hidden states
                 h = hidden_states[batch_idx, token_idx - 1 - hidden_states_offset, :]
+
+                if (not self.training) and self.latent_randomize_mode != "none":
+                    if pass_idx < len(self.latent_randomize_mask) and self.latent_randomize_mask[pass_idx] == 1:
+                        if self.latent_randomize_mode == "norm_preserve":
+                            eps = torch.randn_like(h)
+                            eps = eps / eps.norm(p=2).clamp_min(1e-6)
+                            h = h.norm(p=2).clamp_min(1e-6) * eps
+
                 tensor_list[batch_idx][token_idx] = h
 
                 # collect latent hidden states for the first item in the batch
@@ -198,10 +210,12 @@ class Coconut(nn.Module):
         return Outputs(loss=loss, inputs_embeds=inputs_embeds, logits=logits,
                        latent_hidden_states=latent_hidden_states)
 
-    def train(self):
-        self.base_causallm.train()
+    def train(self, mode=True):
+        super().train(mode=mode)
+        self.base_causallm.train(mode=mode)
 
     def eval(self):
+        super().eval()
         self.base_causallm.eval()
 
     def generate(

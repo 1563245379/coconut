@@ -1,11 +1,8 @@
-# need 4 gpus
-
 project: coconut
 save_path: YOUR_PATH_TO_SAVE_THE_MODEL
 name: gsm-coconut-eval
 
 only_eval: True
-
 coconut: True
 cot: False
 no_thoughts: False
@@ -19,12 +16,10 @@ pad_latent_to_max: True
 save_only_improve: False
 uniform_prob: 0.0
 model_id: openai-community/gpt2
-load_model_path: /workspace/coconut/YOUR_PATH_TO_SAVE_THE_MODEL/gsm-coconut/checkpoint_12
+load_model_path: /workspace/coconut/YOUR_PATH_TO_SAVE_THE_MODEL/gsm-coconut/checkpoint_6
 seed: 0
-resume: 12
+resume: 6
 debug_latent_k: 5
-latent_randomize_mode: none
-latent_randomize_mask: [0, 0, 0, 0, 0, 1]
 bf16: False
 train_path: data/gsm_train.json
 val_path: data/gsm_test.json
@@ -35,3 +30,6 @@ gradient_accumulation_steps: 1
 num_epochs: 25
 lr: !!float "1e-4"
 weight_decay: 0.01
+
+latent_randomize_mode: none
+latent_randomize_mask: null

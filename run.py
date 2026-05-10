@@ -58,6 +58,10 @@ def main():
         configs.internalize_cot = False
     if not hasattr(configs, 'debug_latent_k'):
         configs.debug_latent_k = 0
+    if not hasattr(configs, 'latent_randomize_mode'):
+        configs.latent_randomize_mode = "none"
+    if not hasattr(configs, 'latent_randomize_mask'):
+        configs.latent_randomize_mask = None
     set_seed(configs.seed)
     save_dir = os.path.join(configs.save_path, configs.name)
 
@@ -166,7 +170,11 @@ def main():
         configs.coconut = False
 
     if configs.coconut:
-        model = Coconut(model, latent_id, start_id, end_id, tokenizer.eos_token_id)
+        model = Coconut(
+            model, latent_id, start_id, end_id, tokenizer.eos_token_id,
+            latent_randomize_mode=configs.latent_randomize_mode,
+            latent_randomize_mask=configs.latent_randomize_mask,
+        )
 
     if configs.load_model_path != "None" and not loaded:
         print(model.load_state_dict(saved_weights, strict=False))
